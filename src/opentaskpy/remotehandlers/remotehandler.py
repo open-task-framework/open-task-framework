@@ -1,6 +1,9 @@
 """Abstract classes for remote handlers."""
 
 from abc import ABC, abstractmethod
+from typing import Any
+
+TransferFileSet = list[str] | dict[str, Any]
 
 
 class RemoteHandler(ABC):
@@ -13,6 +16,15 @@ class RemoteHandler(ABC):
             spec (dict): The spec for the handler.
         """
         self.spec = spec
+
+    def tidy(self) -> None:
+        """Tidy up any underlying connection state."""
+
+    def kill(self) -> None:
+        """Attempt to stop any remote work in progress."""
+
+    def set_handler_vars(self, protocol_vars: dict) -> None:
+        """Set any protocol-specific variables for the handler."""
 
 
 class RemoteTransferHandler(RemoteHandler):
@@ -42,9 +54,9 @@ class RemoteTransferHandler(RemoteHandler):
     @abstractmethod
     def transfer_files(
         self,
-        files: list[str],
+        files: TransferFileSet,
         remote_spec: dict,
-        dest_remote_handler: dict | None = None,
+        dest_remote_handler: "RemoteTransferHandler" | None = None,
     ) -> int:
         """Transfer files to the remote location.
 
@@ -76,7 +88,7 @@ class RemoteTransferHandler(RemoteHandler):
 
     @abstractmethod
     def pull_files_to_worker(
-        self, files: list[str], local_staging_directory: str
+        self, files: TransferFileSet, local_staging_directory: str
     ) -> int:
         """Pull files from the remote location to the worker.
 
@@ -89,20 +101,23 @@ class RemoteTransferHandler(RemoteHandler):
         """
 
     @abstractmethod
-    def pull_files(self, files: list[str]) -> int:
+    def pull_files(
+        self, files: TransferFileSet, remote_spec: dict | None = None
+    ) -> int:
         """Pull files from the remote location to the destination system.
 
         Used when a direct push cannot be done, and the files need to be pulled instead.
 
         Args:
             files (list[str]): The files to pull.
+            remote_spec (dict, optional): The remote spec for the transfer. Defaults to None.
 
         Returns:
             int: The result of the transfer. 0 for success, 1 for failure.
         """
 
     @abstractmethod
-    def move_files_to_final_location(self, files: dict) -> int:
+    def move_files_to_final_location(self, files: TransferFileSet) -> int:
         """Move files to their final location.
 
         Once dropped on the destination system, the files may need to be moved to their
@@ -116,7 +131,7 @@ class RemoteTransferHandler(RemoteHandler):
         """
 
     @abstractmethod
-    def handle_post_copy_action(self, files: list[str]) -> int:
+    def handle_post_copy_action(self, files: TransferFileSet) -> int:
         """Handle any post copy actions.
 
         Post Copy Actions (PCA) are actions that need to be performed after the files
@@ -139,8 +154,17 @@ class RemoteTransferHandler(RemoteHandler):
         appropriate caching plugin.
         """
 
-    def tidy(self) -> None:
-        """Tidy up after the transfer, if necessary. Otherwise do nothing."""
+    def init_logwatch(self) -> int:
+        """Initialise log watch support if the handler implements it."""
+        raise NotImplementedError
+
+    def do_logwatch(self) -> int:
+        """Perform one log watch poll if the handler implements it."""
+        raise NotImplementedError
+
+    def create_flag_files(self) -> int:
+        """Create any remote flag files required by the handler."""
+        raise NotImplementedError
 
     def obtain_variable_from_spec(self, variable_name: str, spec: dict) -> str:
         """Using the spec, obtain the current value of the variable.

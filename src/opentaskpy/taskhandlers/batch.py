@@ -5,6 +5,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from os import environ
+from typing import Any
 
 import opentaskpy.otflogging
 from opentaskpy.config.loader import ConfigLoader
@@ -39,7 +40,7 @@ class Batch(TaskHandler):
 
     def __init__(
         self,
-        global_config: dict,
+        global_config: dict[str, Any] | None,
         task_id: str,
         batch_definition: dict,
         config_loader: ConfigLoader,
@@ -150,7 +151,7 @@ class Batch(TaskHandler):
                     status = "COMPLETED"
 
             # Create the task handlers for anything we intend on running
-            task_handler = None
+            task_handler: TaskHandler | None = None
             if status == "NOT_STARTED":
                 # Create the appropriate task handler based on the task type
                 if task_definition["type"] == "execution":
@@ -188,24 +189,6 @@ class Batch(TaskHandler):
 
     def _set_remote_handlers(self) -> None:
         pass
-
-    def return_result(
-        self,
-        status: int,
-        message: str | None = None,
-        exception: type[Exception] | None = None,
-    ) -> bool:
-        """Return the result of the task run.
-
-        Args:
-            status (int): The status code to return.
-            message (str, optional): The message to return. Defaults to None.
-            exception (Exception, optional): The exception to return. Defaults to None.
-
-        Returns:
-            bool: The result of the task run.
-        """
-        return super().return_result(status, message, exception)  # type: ignore[no-any-return]
 
     def check_all_dependency_statuses(self, batch_task: dict, statuses: list) -> bool:
         """Check that all batch task dependencies are in a set of states.
@@ -324,29 +307,24 @@ class Batch(TaskHandler):
                     if (
                         time.time() - batch_task["start_time"] > batch_task["timeout"]
                         and batch_task["thread"].is_alive()
+                        and not batch_task.get("timeout_requested", False)
                     ):
                         self.logger.error(
                             f"Task {order_id} ({batch_task['task_id']}) has timed out"
                         )
                         logged = True
-                        batch_task["status"] = "TIMED_OUT"
+                        batch_task["timeout_requested"] = True
                         # Send event to the thread to kill it
                         self.logger.info(
                             f"Sending kill event to task {order_id} ({batch_task['task_id']})"
                         )
                         batch_task["kill_event"].set()
-                        # Wait for the thread to return
-                        batch_task["thread"].join()
-                        self.logger.info(
-                            f"Task {order_id} ({batch_task['task_id']}) has been killed"
-                        )
-                        batch_task["result"] = False
 
                     # Check whether the thread is actually still running.
                     # If it has died uncleanly, then we need to set the appropriate statuses for it
                     if (
                         not batch_task["thread"].is_alive()
-                        and batch_task["status"] != "TIMED_OUT"
+                        and batch_task["status"] == "RUNNING"
                     ):
                         self.logger.error(
                             f"Task {order_id} ({batch_task['task_id']}) has failed"
@@ -481,10 +459,7 @@ class Batch(TaskHandler):
                         12, f"Checking task handler for {batch_task['task_id']}"
                     )
                     # Check to see if the thread is still alive
-                    if (
-                        not batch_task["executing_thread"][0].running()
-                        and batch_task["status"] != "TIMED_OUT"
-                    ):
+                    if batch_task["executing_thread"][0].done():
                         # Get the returncode from the thread
                         self.logger.info(
                             f"{batch_task['task_id']} has finished running"
@@ -493,7 +468,18 @@ class Batch(TaskHandler):
                             0
                         ].result()
 
-                        if batch_task["result"]:
+                        if batch_task.get("timeout_requested", False):
+                            if batch_task["result"]:
+                                self.logger.warning(
+                                    f"{batch_task['task_id']} completed successfully after a timeout was requested"
+                                )
+                                batch_task["status"] = "COMPLETED"
+                            else:
+                                batch_task["status"] = "TIMED_OUT"
+                                self.logger.info(
+                                    f"Task {batch_task['batch_task_spec']['order_id']} ({batch_task['task_id']}) has been killed"
+                                )
+                        elif batch_task["result"]:
                             batch_task["status"] = "COMPLETED"
                         else:
                             batch_task["status"] = "FAILED"
@@ -510,19 +496,15 @@ class Batch(TaskHandler):
 
                     # Check if we have been asked to kill the thread
                     if event.is_set():
-                        self.logger.info(
-                            f"Killing task handler for {batch_task['task_id']}"
-                        )
-                        # Kill the thread and all it's child processes
-                        batch_task["executing_thread"][0].cancel()
-                        executor.shutdown(wait=False)
-                        self._log_task_result(
-                            "FAILED",
-                            batch_task["batch_task_spec"]["order_id"],
-                            batch_task["task_id"],
-                        )
-
-                        break
+                        if not batch_task.get("kill_requested", False):
+                            self.logger.info(
+                                f"Killing task handler for {batch_task['task_id']}"
+                            )
+                            # Try to cancel queued work, but keep waiting for running work
+                            # so we can record its real final state.
+                            batch_task["executing_thread"][0].cancel()
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            batch_task["kill_requested"] = True
 
                     # Wait for the thread to complete
                     self.logger.log(

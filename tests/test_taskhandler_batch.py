@@ -3,6 +3,7 @@
 import os
 import random
 import shutil
+import time
 
 import pytest
 from pytest_shell import fs
@@ -727,6 +728,52 @@ def test_batch_log_memory_usage(
             os.environ.pop("OTF_LOG_MEMORY_USAGE", None)
         else:
             os.environ["OTF_LOG_MEMORY_USAGE"] = old_value
+        if old_poll is None:
+            os.environ.pop("OTF_BATCH_POLL_INTERVAL", None)
+        else:
+            os.environ["OTF_BATCH_POLL_INTERVAL"] = old_poll
+
+
+def test_batch_timeout_can_complete_if_kill_does_not_interrupt(
+    env_vars, root_dir, clear_logs, no_thread_sleep
+):
+    class SlowSuccessfulTaskHandler:
+        def __init__(self):
+            self.task_id = "slow-success"
+
+        def run(self, kill_event=None):
+            time.sleep(0.2)
+            return True
+
+    old_poll = os.environ.get("OTF_BATCH_POLL_INTERVAL")
+    os.environ["OTF_BATCH_POLL_INTERVAL"] = "0.01"
+    try:
+        config_loader = ConfigLoader("test/cfg")
+        batch_obj = batch.Batch(
+            None,
+            f"timeout-success-{RANDOM}",
+            basic_batch_definition,
+            config_loader,
+        )
+        batch_obj.task_order_tree = {
+            1: {
+                "task_id": "slow-success",
+                "batch_task_spec": {"order_id": 1, "task_id": "slow-success"},
+                "task": {"type": "execution"},
+                "task_handler": SlowSuccessfulTaskHandler(),
+                "timeout": 0.05,
+                "continue_on_fail": False,
+                "retry_on_rerun": False,
+                "status": "NOT_STARTED",
+                "result": None,
+            }
+        }
+
+        assert batch_obj.run()
+        assert batch_obj.task_order_tree[1]["status"] == "COMPLETED"
+        assert batch_obj.task_order_tree[1]["result"] is True
+        assert batch_obj.task_order_tree[1]["kill_event"].is_set()
+    finally:
         if old_poll is None:
             os.environ.pop("OTF_BATCH_POLL_INTERVAL", None)
         else:

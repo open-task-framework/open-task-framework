@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import sys
+from collections.abc import MutableMapping
 from glob import glob
 from typing import Any
 
@@ -109,7 +110,7 @@ class ConfigLoader:
                     self.file_cache[file_path] = file.read()
         self.logger.log(12, f"Preloaded {len(self.file_cache)} files into memory.")
 
-    def _load_filters(self, destination: dict) -> None:
+    def _load_filters(self, destination: MutableMapping[str, Any]) -> None:
         """Load default filters from opentaskpy.filters.default_filters.
 
         Args:

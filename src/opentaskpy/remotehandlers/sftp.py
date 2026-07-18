@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import time
+from collections.abc import Collection
 from io import StringIO
 from shlex import quote
 
@@ -131,7 +132,7 @@ class SFTPTransfer(RemoteTransferHandler):
             retry_if_not_exception_message(
                 match=r".*(not found in known_hosts|Name or service not known|Not retrying due to config).*"
             )
-            & retry_if_exception(Exception)
+            & retry_if_exception(lambda ex: isinstance(ex, Exception))
         ),
     )
     def connect_with_retry(self, client_kwargs: dict) -> None:
@@ -265,7 +266,7 @@ class SFTPTransfer(RemoteTransferHandler):
         return remote_files
 
     def pull_files_to_worker(
-        self, files: list[str], local_staging_directory: str
+        self, files: Collection[str], local_staging_directory: str
     ) -> int:
         """Pull files to the worker.
 
@@ -456,19 +457,26 @@ class SFTPTransfer(RemoteTransferHandler):
 
         return result
 
-    def transfer_files(self, files: list[str]) -> None:
+    def transfer_files(
+        self,
+        files: Collection[str],
+        remote_spec: dict,
+        dest_remote_handler: RemoteTransferHandler | None = None,
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def pull_files(self, files: list[str]) -> None:
+    def pull_files(
+        self, files: Collection[str], remote_spec: dict | None = None
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def move_files_to_final_location(self, files: list[str]) -> None:
+    def move_files_to_final_location(self, files: Collection[str]) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def handle_post_copy_action(self, files: list[str]) -> int:
+    def handle_post_copy_action(self, files: Collection[str]) -> int:
         """Handle the post copy action specified in the config.
 
         Args:
