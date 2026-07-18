@@ -341,7 +341,16 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Check out code from GitHub
+        uses: actions/checkout@v4.1.7
+      - name: Detect Python file changes
+        id: changed-python-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files: |
+            **/*.py
       - name: Changelog check
+        if: steps.changed-python-files.outputs.any_changed == 'true'
         uses: tarides/changelog-check-action@v3
         with:
           changelog: CHANGELOG.md
