@@ -1,28 +1,25 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "../otf-addons-o365"
-		},
-		{
-			"path": "../otf-addons-aws"
-		},
-		{
-			"path": "../otf-addons-vault"
-		},
-		{
-			"path": "../otf-addons-winrm"
-		},
-		{
-			"path": "../otf-addons-gcp"
-		}
-	],
-	"settings": {
-		"files.associations": {
-			"*.json": "jsonc"
-		},
-		"ruff.lint.enable": true
-	}
+  "folders": [
+    {
+      "path": ".",
+    },
+    {
+      "path": "../otf-addons-o365",
+    },
+    {
+      "path": "../otf-addons-aws",
+    },
+    {
+      "path": "../otf-addons-winrm",
+    },
+    {
+      "path": "../otf-addons-gcp",
+    },
+  ],
+  "settings": {
+    "files.associations": {
+      "*.json": "jsonc",
+    },
+    "ruff.lint.enable": true,
+  },
 }

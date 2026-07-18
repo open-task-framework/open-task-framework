@@ -216,6 +216,47 @@ scp_proxy_task_definition = {
     ],
 }
 
+scp_mixed_proxy_task_definition = {
+    "type": "transfer",
+    "source": {
+        "hostname": "172.16.0.11",
+        "directory": "/tmp/testFiles/src",
+        "fileRegex": ".*taskhandler.proxy.mixed\\.txt",
+        "protocol": {"name": "ssh", "credentials": {"username": "application"}},
+    },
+    "destination": [
+        {
+            "hostname": "172.16.0.22",
+            "directory": "/home/application/testFiles/dest",
+            "rename": {
+                "pattern": "^(.*)\\.txt$",
+                "sub": "\\1-sftp.txt",
+            },
+            "protocol": {"name": "sftp", "credentials": {"username": "application"}},
+        },
+        {
+            "hostname": "172.16.0.12",
+            "transferType": "proxy",
+            "directory": "/tmp/testFiles/dest",
+            "rename": {
+                "pattern": "^(.*)\\.txt$",
+                "sub": "\\1-ssh-1.txt",
+            },
+            "protocol": {"name": "ssh", "credentials": {"username": "application"}},
+        },
+        {
+            "hostname": "172.16.0.12",
+            "transferType": "proxy",
+            "directory": "/tmp/testFiles/dest",
+            "rename": {
+                "pattern": "^(.*)\\.txt$",
+                "sub": "\\1-ssh-2.txt",
+            },
+            "protocol": {"name": "ssh", "credentials": {"username": "application"}},
+        },
+    ],
+}
+
 scp_destination_file_rename = {
     "type": "transfer",
     "source": {
@@ -735,6 +776,46 @@ def test_scp_proxy(root_dir, setup_ssh_keys):
     assert transfer_obj.run()
     # Check the destination file exists
     assert os.path.exists(f"{root_dir}/testFiles/ssh_2/dest/test.taskhandler.proxy.txt")
+
+    # Ensure that local files are tidied up
+    assert not os.path.exists(local_staging_dir)
+
+
+def test_scp_proxy_mixed_destinations(root_dir, setup_ssh_keys, setup_sftp_keys):
+    import random
+
+    random_no = random.randint(1, 1000)
+    expected_content = f"test1234-mixed-proxy-route-{random_no}"
+    source_file = f"{root_dir}/testFiles/ssh_1/src/test.taskhandler.proxy.mixed.txt"
+    destination_files = [
+        f"{root_dir}/testFiles/sftp_2/dest/test.taskhandler.proxy.mixed-sftp.txt",
+        f"{root_dir}/testFiles/ssh_2/dest/test.taskhandler.proxy.mixed-ssh-1.txt",
+        f"{root_dir}/testFiles/ssh_2/dest/test.taskhandler.proxy.mixed-ssh-2.txt",
+    ]
+
+    if os.path.exists(source_file):
+        os.remove(source_file)
+
+    for destination_file in destination_files:
+        if os.path.exists(destination_file):
+            os.remove(destination_file)
+
+    # Create a test file
+    fs.create_files([{source_file: {"content": expected_content}}])
+
+    # Create a transfer object
+    transfer_obj = transfer.Transfer(None, "scp-basic", scp_mixed_proxy_task_definition)
+    local_staging_dir = transfer_obj.local_staging_dir
+
+    # Run the transfer and expect a true status
+    assert transfer_obj.run()
+
+    # The first destination uses a different protocol, while the later ssh
+    # destinations explicitly force proxy mode. All three should receive the file.
+    for destination_file in destination_files:
+        assert os.path.exists(destination_file)
+        with open(destination_file, "r") as file_handle:
+            assert file_handle.read() == expected_content
 
     # Ensure that local files are tidied up
     assert not os.path.exists(local_staging_dir)

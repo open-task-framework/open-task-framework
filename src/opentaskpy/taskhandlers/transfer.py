@@ -369,11 +369,15 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
         original_file_list = remote_files.copy()
         # If there's a destination file spec, then we need to transfer the files
         if self.dest_file_specs:
+            source_supports_direct_transfer = (
+                self.source_remote_handler.supports_direct_transfer()
+            )
             # Loop through all dest_file specs and see if there are any transfers where the source and dest protocols are different
             # If there are, then we need to do a pull transfer first, then a push transfer
             any_different_protocols = False
-            i = 0
-            for dest_file_spec in self.dest_file_specs:
+            destination_protocol_differences = []
+            requires_local_staging = False
+            for i, dest_file_spec in enumerate(self.dest_file_specs):
                 different_protocols = False
                 if (
                     (
@@ -388,6 +392,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                 ):
                     different_protocols = True
                     any_different_protocols = True
+                destination_protocol_differences.append(different_protocols)
 
                 # If there are differences, download the file locally first
                 # so it's ready to upload to multiple destinations at once
@@ -397,25 +402,27 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                         "transferType" in dest_file_spec
                         and dest_file_spec["transferType"] == "proxy"
                     )
-                    or not self.source_remote_handler.supports_direct_transfer()
+                    or not source_supports_direct_transfer
                 ):
-                    # Create local staging dir (if this isn't using the local protocol)
-                    if self.source_file_spec["protocol"]["name"] != "local":
-                        makedirs(self.local_staging_dir, exist_ok=True)
-                    else:
-                        self.local_staging_dir = self.source_file_spec["directory"]
-                    transfer_result = self.source_remote_handler.pull_files_to_worker(
-                        remote_files, self.local_staging_dir
+                    requires_local_staging = True
+
+            if requires_local_staging:
+                # Create local staging dir (if this isn't using the local protocol)
+                if self.source_file_spec["protocol"]["name"] != "local":
+                    makedirs(self.local_staging_dir, exist_ok=True)
+                else:
+                    self.local_staging_dir = self.source_file_spec["directory"]
+                transfer_result = self.source_remote_handler.pull_files_to_worker(
+                    remote_files, self.local_staging_dir
+                )
+                # Since files are being pulled locally, encryption/decryption of the files is possible
+                can_do_encryption = True
+                if transfer_result != 0:
+                    return self.return_result(
+                        1,
+                        "Pull to worker from remote source errored",
+                        exception=exceptions.RemoteTransferError,
                     )
-                    # Since files are being pulled locally, encryption/decryption of the files is possible
-                    can_do_encryption = True
-                    if transfer_result != 0:
-                        return self.return_result(
-                            1,
-                            "Pull to worker from remote source errored",
-                            exception=exceptions.RemoteTransferError,
-                        )
-                i += 1
 
             # Before doing any file movements, check to see if file decryption or encryption is
             # required on the source or destination. For any unsupported transferTypes we need to fail here first
@@ -524,7 +531,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                         # And the destination and source remote handler classes are the same
                     )
                     and not any_different_protocols
-                    and self.source_remote_handler.supports_direct_transfer()
+                    and source_supports_direct_transfer
                 ):
                     transfer_result = self.source_remote_handler.transfer_files(
                         remote_files,
@@ -541,15 +548,18 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                     self.logger.info("Transfer completed successfully")
                 # If this is a default push transfer, and source and dest protocols are different
                 elif (
-                    (
-                        "transferType" in dest_file_spec
-                        and (
-                            dest_file_spec["transferType"] == "push"
-                            or dest_file_spec["transferType"] == "proxy"
-                        )
+                    "transferType" not in dest_file_spec
+                    or (
+                        dest_file_spec["transferType"] == "push"
+                        or dest_file_spec["transferType"] == "proxy"
                     )
-                    or different_protocols
-                    or not self.source_remote_handler.supports_direct_transfer()
+                ) and (
+                    any_different_protocols
+                    or (
+                        "transferType" in dest_file_spec
+                        and dest_file_spec["transferType"] == "proxy"
+                    )
+                    or not source_supports_direct_transfer
                 ):
                     self.logger.debug(
                         "Transfer protocols are different, or proxy transfer is"
@@ -599,6 +609,22 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
 
                     self.logger.info("Transfer completed successfully")
 
+                else:
+                    transfer_type = dest_file_spec.get("transferType", "push")
+                    self.logger.warning(
+                        "No valid transfer method available for destination "
+                        f"{dest_file_spec.get('hostname', '<unknown>')} with "
+                        f"transferType={transfer_type}, "
+                        f"source_handler={self.source_remote_handler.__class__.__name__}, "
+                        f"dest_handler={associated_dest_remote_handler.__class__.__name__}, "
+                        f"source_supports_direct_transfer={source_supports_direct_transfer}"
+                    )
+                    return self.return_result(
+                        1,
+                        "No valid transfer method available for destination",
+                        exception=exceptions.RemoteTransferError,
+                    )
+
                 # Handle any ownership and permissions changes
                 if dest_file_spec["protocol"]["name"] == "ssh":
                     move_result = self.dest_remote_handlers[
@@ -626,7 +652,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                 self.logger.info(f"Transferred {len(remote_files)} files")
 
             if (
-                different_protocols
+                requires_local_staging
                 and self.source_file_spec["protocol"]["name"] != "dummy"
                 and self.local_staging_dir != self.source_file_spec["directory"]
             ):
