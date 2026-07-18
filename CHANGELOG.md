@@ -1,5 +1,9 @@
 # Changelog
 
+# v26.28.0
+
+- Fix the transfer routing bug where destinations could be skipped when a task had multiple destinations with mixed handler types and the final destination matched the source handler type. Closes [#161](https://github.com/open-task-framework/open-task-framework/issues/161)
+
 # v26.18.1
 
 - Fix memory leak in batches caused by now tidying up the remote handler objects after a task has completed.
