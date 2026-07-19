@@ -123,24 +123,26 @@ class TaskHandler(ABC):
             self.logger.log(12, f"Setting handler vars for {source_protocol}")
 
             # Read the protocol specific variables from the global config
-            if (
-                self.global_config
-                and "global_protocol_vars" in self.global_config
-                and next(
-                    (
-                        item
-                        for item in self.global_config["global_protocol_vars"]
-                        if item["name"] == source_protocol
-                    ),
+            if self.global_config and "global_protocol_vars" in self.global_config:
+                raw_protocol_vars = self.global_config["global_protocol_vars"]
+                protocol_var_items = (
+                    raw_protocol_vars
+                    if isinstance(raw_protocol_vars, list)
+                    else [raw_protocol_vars]
                 )
-            ):
                 protocol_vars = next(
                     (
                         item
-                        for item in self.global_config["global_protocol_vars"]
+                        for item in protocol_var_items
                         if item["name"] == source_protocol
                     ),
-                ).copy()
+                    None,
+                )
+            else:
+                protocol_vars = None
+
+            if protocol_vars:
+                protocol_vars = protocol_vars.copy()
                 # Remove "name" from the dict
                 del protocol_vars["name"]
 
