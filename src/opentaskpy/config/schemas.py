@@ -6,6 +6,7 @@ import json
 import sys
 from importlib.resources import files
 from pathlib import Path
+from typing import cast
 
 from jsonschema import Draft202012Validator, validate, validators
 from jsonschema.exceptions import ValidationError
@@ -140,7 +141,7 @@ def validate_transfer_json(json_data: dict) -> bool:
     try:
 
         # Load the schema file for XXX_source
-        resolver = Registry(retrieve=_retrieve_from_filesystem)
+        resolver = Registry(retrieve=_retrieve_from_filesystem)  # type: ignore[call-arg]
 
         validator = DefaultValidatingValidator(
             TRANSFER_SCHEMA,
@@ -178,7 +179,7 @@ def validate_transfer_json(json_data: dict) -> bool:
             source_protocol = source_protocol.split(".")[-2]
 
             # Append new path to the resolver
-            resolver.with_resource(module_path.as_uri(), module_path)  # type: ignore[attr-defined]
+            resolver.with_resource(cast(Path, module_path).as_uri(), module_path)  # type: ignore[arg-type]
         else:
             # Default protocol
             module_path = schema_dir
@@ -209,7 +210,7 @@ def validate_transfer_json(json_data: dict) -> bool:
                     destination_protocol = destination_protocol.split(".")[-2]
 
                     # Append new path to the resolver
-                    resolver.with_resource(module_path.as_uri(), module_path)  # type: ignore[attr-defined]
+                    resolver.with_resource(cast(Path, module_path).as_uri(), module_path)  # type: ignore[arg-type]
                 else:
                     # Default protocol
                     module_path = schema_dir
@@ -277,7 +278,7 @@ def validate_execution_json(json_data: dict) -> bool:
         schema_dir = files("opentaskpy.config").joinpath("schemas")
 
         # Load the schema file for xxx
-        resolver = Registry(retrieve=_retrieve_from_filesystem)
+        resolver = Registry(retrieve=_retrieve_from_filesystem)  # type: ignore[call-arg]
 
         if "." in protocol:
             # Get the full package name from the class name (strip the class off the end)
@@ -291,7 +292,7 @@ def validate_execution_json(json_data: dict) -> bool:
             protocol = protocol.split(".")[-2]
 
             # Append new path to the resolver
-            resolver.with_resource(module_path.as_uri(), module_path)  # type: ignore[attr-defined]
+            resolver.with_resource(cast(Path, module_path).as_uri(), module_path)  # type: ignore[arg-type]
         else:
             # Default protocol
             module_path = schema_dir
@@ -331,7 +332,7 @@ def validate_batch_json(json_data: dict) -> bool:
     """
     try:
         # Load the schema file for xxx
-        resolver = Registry(retrieve=_retrieve_from_filesystem)
+        resolver = Registry(retrieve=_retrieve_from_filesystem)  # type: ignore[call-arg]
 
         validator = DefaultValidatingValidator(
             BATCH_SCHEMA,

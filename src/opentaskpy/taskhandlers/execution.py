@@ -2,10 +2,10 @@
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import NamedTuple
+from typing import Any, NamedTuple, cast
 
 import opentaskpy.otflogging
-from opentaskpy.remotehandlers.remotehandler import RemoteHandler
+from opentaskpy.remotehandlers.remotehandler import RemoteExecutionHandler
 from opentaskpy.taskhandlers.taskhandler import TaskHandler
 
 
@@ -22,13 +22,18 @@ TASK_TYPE = "E"
 class Execution(TaskHandler):
     """Execution task handler."""
 
-    remote_handlers: list[RemoteHandler] | None = None
+    remote_handlers: list[RemoteExecutionHandler] | None = None
     overall_result: bool = False
 
     _protocol_classes: dict[str, type] = {}  # Class-level cache
     _protocol_lock = threading.Lock()  # Lock for class-level cache
 
-    def __init__(self, global_config: dict, task_id: str, execution_definition: dict):
+    def __init__(
+        self,
+        global_config: dict[str, Any] | None,
+        task_id: str,
+        execution_definition: dict,
+    ):
         """Initialize the execution handler.
 
         Args:
@@ -49,7 +54,7 @@ class Execution(TaskHandler):
         self,
         status: int,
         message: str | None = None,
-        exception: Exception | None = None,
+        exception: type[Exception] | Exception | None = None,
     ) -> bool:
         """Return the result of the task run.
 
@@ -75,7 +80,7 @@ class Execution(TaskHandler):
         # Call super to do the rest
         return super().return_result(status, message, exception)  # type: ignore[no-any-return]
 
-    def _get_remote_host_name(self, remote_handler: RemoteHandler) -> str:
+    def _get_remote_host_name(self, remote_handler: RemoteExecutionHandler) -> str:
         return (
             str(remote_handler.remote_host)
             if hasattr(remote_handler, "remote_host")
@@ -98,20 +103,30 @@ class Execution(TaskHandler):
         if remote_protocol in super().DEFAULT_PROTOCOL_MAP[TASK_TYPE]:
             if "hosts" in self.execution_definition:
                 for host in self.execution_definition["hosts"]:
-                    handler_class = super()._get_default_class(
-                        TASK_TYPE, remote_protocol
+                    handler_class = cast(
+                        Any, super()._get_default_class(TASK_TYPE, remote_protocol)
                     )
-                    remote_handler = handler_class(host, self.execution_definition)
+                    remote_handler = cast(
+                        RemoteExecutionHandler,
+                        handler_class(host, self.execution_definition),
+                    )
 
                     self.remote_handlers.append(remote_handler)
             else:
-                handler_class = super()._get_default_class(TASK_TYPE, remote_protocol)
-                remote_handler = handler_class(self.execution_definition)
+                handler_class = cast(
+                    Any, super()._get_default_class(TASK_TYPE, remote_protocol)
+                )
+                remote_handler = cast(
+                    RemoteExecutionHandler, handler_class(self.execution_definition)
+                )
 
                 self.remote_handlers.append(remote_handler)
         else:
-            remote_handler = super()._get_handler_for_protocol(
-                remote_protocol, self.execution_definition
+            remote_handler = cast(
+                RemoteExecutionHandler,
+                super()._get_handler_for_protocol(
+                    remote_protocol, self.execution_definition
+                ),
             )
             self.remote_handlers.append(remote_handler)
 
@@ -211,7 +226,7 @@ class Execution(TaskHandler):
 
         return self.return_result(1, "Execution(s) failed", ex)
 
-    def _execute(self, remote_handler: RemoteHandler) -> bool:
+    def _execute(self, remote_handler: RemoteExecutionHandler) -> bool:
         result: bool = remote_handler.execute()
         remote_host = self._get_remote_host_name(remote_handler)
         self.logger.info(f"[{remote_host}] Execution returned {result}")

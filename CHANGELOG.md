@@ -1,5 +1,9 @@
 # Changelog
 
+# v26.28.1
+
+- Fix batch timeout handling so tasks are not marked failed immediately when a timeout is reached, allowing tasks that continue running and complete successfully to be recorded as successful. This is significant for S3 transfers for example where the transfer cannot be killed, and may complete successfully if there is an in-flight transfer actively downloading/uploading. Closes [#162](https://github.com/open-task-framework/open-task-framework/issues/162)
+
 # v26.28.0
 
 - Fix the transfer routing bug where destinations could be skipped when a task had multiple destinations with mixed handler types and the final destination matched the source handler type. Closes [#161](https://github.com/open-task-framework/open-task-framework/issues/161)

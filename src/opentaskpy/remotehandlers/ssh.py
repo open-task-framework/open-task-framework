@@ -10,6 +10,7 @@ import random
 import re
 import stat
 import time
+from collections.abc import Collection
 from io import StringIO
 from shlex import quote
 
@@ -148,7 +149,7 @@ class SSHTransfer(RemoteTransferHandler):
             retry_if_not_exception_message(
                 match=r".*(not found in known_hosts|Name or service not known).*"
             )
-            & retry_if_exception(Exception)
+            & retry_if_exception(lambda ex: isinstance(ex, Exception))
         ),
     )
     def connect_with_retry(self, ssh_client: SSHClient, kwargs: dict) -> None:
@@ -269,7 +270,7 @@ class SSHTransfer(RemoteTransferHandler):
         return remote_files
 
     def pull_files_to_worker(
-        self, files: list[str], local_staging_directory: str
+        self, files: Collection[str], local_staging_directory: str
     ) -> int:
         """Pull files to the worker.
 
@@ -370,7 +371,7 @@ class SSHTransfer(RemoteTransferHandler):
 
     def transfer_files(
         self,
-        files: list[str],
+        files: Collection[str],
         remote_spec: dict,
         dest_remote_handler: RemoteTransferHandler | None = None,
     ) -> int:
@@ -391,7 +392,7 @@ class SSHTransfer(RemoteTransferHandler):
 
         # If we are given a destination handler, make sure we connect to the host
         if dest_remote_handler:
-            self.connect(remote_host, dest_remote_handler.ssh_client)
+            self.connect(remote_host, dest_remote_handler.ssh_client)  # type: ignore[attr-defined]
 
         # Construct an SCP command to transfer the files to the destination server
         remote_user = (
@@ -405,7 +406,7 @@ class SSHTransfer(RemoteTransferHandler):
 
         # Check that the SFTP client is connected and active
         if dest_remote_handler:
-            dest_sftp_client = dest_remote_handler.ssh_client.open_sftp()
+            dest_sftp_client = dest_remote_handler.ssh_client.open_sftp()  # type: ignore[attr-defined]
 
         # Create/validate staging directory exists on destination
         # Use SFTP connection to check if the directory exists
@@ -443,7 +444,9 @@ class SSHTransfer(RemoteTransferHandler):
 
         return remote_rc
 
-    def pull_files(self, files: list[str], remote_spec: dict) -> int:
+    def pull_files(
+        self, files: Collection[str], remote_spec: dict | None = None
+    ) -> int:
         """Pull files from the source server to the destination server.
 
         Args:
@@ -456,7 +459,7 @@ class SSHTransfer(RemoteTransferHandler):
         self.connect(self.spec["hostname"])
         # Construct an SCP command to transfer the files from the source server
         source_user = self.spec["protocol"]["credentials"]["transferUsername"]
-        source_host = remote_spec["hostname"]
+        source_host = remote_spec["hostname"] if remote_spec else self.spec["hostname"]
 
         # Handle staging directory if there is one
         destination_directory = self.get_staging_directory(self.spec)
@@ -504,7 +507,7 @@ class SSHTransfer(RemoteTransferHandler):
 
         return remote_rc
 
-    def move_files_to_final_location(self, files: dict) -> int:
+    def move_files_to_final_location(self, files: Collection[str]) -> int:
         """Move files from the staging directory to their final location.
 
         Args:
@@ -634,7 +637,7 @@ class SSHTransfer(RemoteTransferHandler):
 
         self.logger.info("### END OF REMOTE OUTPUT ###")
 
-    def handle_post_copy_action(self, files: list[str]) -> int:
+    def handle_post_copy_action(self, files: Collection[str]) -> int:
         """Handle the post copy action specified in the config.
 
         Args:

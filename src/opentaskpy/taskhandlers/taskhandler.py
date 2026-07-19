@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from importlib import import_module
 from logging import Logger
 from sys import modules
-from typing import NamedTuple
+from typing import Any, NamedTuple, cast
 
 import opentaskpy.otflogging
 from opentaskpy.exceptions import UnknownProtocolError
@@ -54,18 +54,24 @@ class TaskHandler(ABC):
 
     logger: Logger
     overall_result: bool
+    task_id: str
     handled_exception: bool = False
 
-    _protocol_classes: dict[str, type] = {}  # Class-level cache
-    _addon_packages: dict[str, type] = {}  # Class-level cache for addon packages
+    _protocol_classes: dict[str, type[RemoteHandler]] = {}  # Class-level cache
+    _addon_packages: dict[str, type[RemoteHandler]] = (
+        {}
+    )  # Class-level cache for addon packages
     _protocol_lock = threading.Lock()  # Lock for class-level cache
 
-    def __init__(self, global_config: dict):
+    def __init__(self, global_config: dict[str, Any] | None):
         """Initialize the class."""
         self.global_config = global_config
 
     def return_result(
-        self, status: int, message: str, exception: type[Exception] | None = None
+        self,
+        status: int,
+        message: str | None = None,
+        exception: type[Exception] | Exception | None = None,
     ) -> bool:
         """Return the result of the task run.
 
@@ -91,10 +97,10 @@ class TaskHandler(ABC):
         # Throw an exception if we have one
         if exception and not self.handled_exception:
             self.handled_exception = True
-            if callable(exception):
-                raise exception(message)
+            if isinstance(exception, type) and issubclass(exception, Exception):
+                raise exception(message or "")
 
-            raise Exception(message)  # pylint: disable=broad-exception-raised
+            raise Exception(message or "")  # pylint: disable=broad-exception-raised
 
         return status == 0
 
@@ -102,7 +108,7 @@ class TaskHandler(ABC):
     def _set_remote_handlers(self) -> None: ...
 
     @abstractmethod
-    def run(self) -> bool:
+    def run(self, kill_event: threading.Event | None = None) -> bool:
         """Run the task handler.
 
         Returns:
@@ -117,31 +123,33 @@ class TaskHandler(ABC):
             self.logger.log(12, f"Setting handler vars for {source_protocol}")
 
             # Read the protocol specific variables from the global config
-            if (
-                self.global_config
-                and "global_protocol_vars" in self.global_config
-                and next(
-                    (
-                        item
-                        for item in self.global_config["global_protocol_vars"]
-                        if item["name"] == source_protocol
-                    ),
+            if self.global_config and "global_protocol_vars" in self.global_config:
+                raw_protocol_vars = self.global_config["global_protocol_vars"]
+                protocol_var_items = (
+                    raw_protocol_vars
+                    if isinstance(raw_protocol_vars, list)
+                    else [raw_protocol_vars]
                 )
-            ):
                 protocol_vars = next(
                     (
                         item
-                        for item in self.global_config["global_protocol_vars"]
+                        for item in protocol_var_items
                         if item["name"] == source_protocol
                     ),
-                ).copy()
+                    None,
+                )
+            else:
+                protocol_vars = None
+
+            if protocol_vars:
+                protocol_vars = protocol_vars.copy()
                 # Remove "name" from the dict
                 del protocol_vars["name"]
 
                 remote_handler.set_handler_vars(protocol_vars)
 
     def _get_handler_for_protocol(
-        self, protocol_name: str, spec: dict
+        self, protocol_name: str, spec: dict[str, Any]
     ) -> RemoteHandler:
         """Get the handler for a protocol.
 
@@ -181,8 +189,11 @@ class TaskHandler(ABC):
                             )
                             import_module(addon_package)
 
-                        addon_class = getattr(
-                            modules[addon_package], protocol_name.split(".")[-1]
+                        addon_class = cast(
+                            type[RemoteHandler],
+                            getattr(
+                                modules[addon_package], protocol_name.split(".")[-1]
+                            ),
                         )
                         self._addon_packages[protocol_name] = addon_class
                     except ModuleNotFoundError as exc:
@@ -197,7 +208,9 @@ class TaskHandler(ABC):
 
         return addon_class(spec)
 
-    def _get_default_class(self, task_type: str, protocol_name: str) -> type:
+    def _get_default_class(
+        self, task_type: str, protocol_name: str
+    ) -> type[RemoteHandler]:
         try:
             return self._protocol_classes[protocol_name]  # Fast path when cached
         except KeyError:

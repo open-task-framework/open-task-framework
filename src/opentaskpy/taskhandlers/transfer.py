@@ -6,6 +6,7 @@ import threading
 import time
 from math import ceil, floor
 from os import environ, getpid, makedirs, path, remove
+from typing import Any, cast
 
 import gnupg
 
@@ -27,13 +28,18 @@ DEFAULT_STAGING_DIR_BASE = "/tmp"  # nosec B108
 class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
     """Task handler for running transfers."""
 
-    source_remote_handler: RemoteTransferHandler
-    dest_remote_handlers: RemoteTransferHandler = None
+    source_remote_handler: RemoteTransferHandler | None = None
+    dest_remote_handlers: list[RemoteTransferHandler] | None = None
     source_file_spec: dict
     dest_file_specs: list[dict] | None = None
     overall_result: bool = False
 
-    def __init__(self, global_config: dict, task_id: str, transfer_definition: dict):
+    def __init__(
+        self,
+        global_config: dict[str, Any] | None,
+        task_id: str,
+        transfer_definition: dict,
+    ):
         """Create a new transfer task handler.
 
         Args:
@@ -72,7 +78,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
         self,
         status: int,
         message: str | None = None,
-        exception: Exception | None = None,
+        exception: type[Exception] | Exception | None = None,
     ) -> bool:
         """Return the result of the task run.
 
@@ -138,13 +144,18 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
         # Based on the source protocol pick the appropriate remote handler
         if source_protocol in super().DEFAULT_PROTOCOL_MAP[TASK_TYPE]:
             handler_class = super()._get_default_class(TASK_TYPE, source_protocol)
-            self.source_remote_handler = handler_class(self.source_file_spec)
+            self.source_remote_handler = cast(
+                RemoteTransferHandler, handler_class(self.source_file_spec)
+            )
 
         # If not SSH, then it's a non-standard protocol, we need to see if it's loadable
         # load it, and then create the remote handler
         else:
-            self.source_remote_handler = super()._get_handler_for_protocol(
-                source_protocol, self.source_file_spec
+            self.source_remote_handler = cast(
+                RemoteTransferHandler,
+                super()._get_handler_for_protocol(
+                    source_protocol, self.source_file_spec
+                ),
             )
 
         super()._set_handler_vars(source_protocol, self.source_remote_handler)
@@ -156,16 +167,20 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
                 remote_protocol = dest_file_spec["protocol"]["name"]
 
                 # For each host, create a remote handler
-                remote_handler = None
                 if remote_protocol in super().DEFAULT_PROTOCOL_MAP[TASK_TYPE]:
                     handler_class = super()._get_default_class(
                         TASK_TYPE, remote_protocol
                     )
-                    remote_handler = handler_class(dest_file_spec)
+                    remote_handler = cast(
+                        RemoteTransferHandler, handler_class(dest_file_spec)
+                    )
 
                 else:
-                    remote_handler = super()._get_handler_for_protocol(
-                        remote_protocol, dest_file_spec
+                    remote_handler = cast(
+                        RemoteTransferHandler,
+                        super()._get_handler_for_protocol(
+                            remote_protocol, dest_file_spec
+                        ),
                     )
 
                 self.dest_remote_handlers.append(remote_handler)
@@ -183,6 +198,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
         self.logger.info("Running transfer")
 
         self._set_remote_handlers()
+        assert self.source_remote_handler is not None
 
         # If log watching, do that first
         if "logWatch" in self.source_file_spec:
@@ -369,6 +385,7 @@ class Transfer(TaskHandler):  # pylint: disable=too-many-instance-attributes
         original_file_list = remote_files.copy()
         # If there's a destination file spec, then we need to transfer the files
         if self.dest_file_specs:
+            assert self.dest_remote_handlers is not None
             source_supports_direct_transfer = (
                 self.source_remote_handler.supports_direct_transfer()
             )

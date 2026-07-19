@@ -11,6 +11,7 @@ import re
 import shutil
 import stat
 import subprocess
+from collections.abc import Collection
 from shlex import quote
 
 import opentaskpy.otflogging
@@ -101,7 +102,7 @@ class LocalTransfer(RemoteTransferHandler):
         return result
 
     def pull_files_to_worker(
-        self, files: list[str], local_staging_directory: str  # noqa: ARG002
+        self, files: Collection[str], local_staging_directory: str  # noqa: ARG002
     ) -> int:
         """Pull files to the worker.
 
@@ -203,19 +204,26 @@ class LocalTransfer(RemoteTransferHandler):
 
         return result
 
-    def transfer_files(self, files: list[str]) -> None:
+    def transfer_files(
+        self,
+        files: Collection[str],
+        remote_spec: dict,
+        dest_remote_handler: RemoteTransferHandler | None = None,
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def pull_files(self, files: list[str]) -> None:
+    def pull_files(
+        self, files: Collection[str], remote_spec: dict | None = None
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def move_files_to_final_location(self, files: list[str]) -> None:
+    def move_files_to_final_location(self, files: Collection[str]) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def handle_post_copy_action(self, files: list[str]) -> int:
+    def handle_post_copy_action(self, files: Collection[str]) -> int:
         """Handle the post copy action specified in the config.
 
         Args:

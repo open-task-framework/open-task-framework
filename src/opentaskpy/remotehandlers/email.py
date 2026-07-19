@@ -4,6 +4,7 @@ import glob
 import os
 import re
 import smtplib
+from collections.abc import Collection
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -231,11 +232,13 @@ class EmailTransfer(RemoteTransferHandler):
 
         return result
 
-    def pull_files_to_worker(self, local_staging_directory: str) -> int:
+    def pull_files_to_worker(
+        self, files: Collection[str], local_staging_directory: str
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def handle_post_copy_action(self, files: list) -> None:
+    def handle_post_copy_action(self, files: Collection[str]) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
@@ -245,16 +248,21 @@ class EmailTransfer(RemoteTransferHandler):
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def move_files_to_final_location(self, files: list) -> None:
+    def move_files_to_final_location(self, files: Collection[str]) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
-    def pull_files(self, files: list) -> None:
+    def pull_files(
+        self, files: Collection[str], remote_spec: dict | None = None
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
 
     def transfer_files(
-        self, files: dict, remote_spec: dict, dest_remote_handler: dict | None = None
-    ) -> None:
+        self,
+        files: Collection[str],
+        remote_spec: dict,
+        dest_remote_handler: RemoteTransferHandler | None = None,
+    ) -> int:
         """Not implemented for this handler."""
         raise NotImplementedError
