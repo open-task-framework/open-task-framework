@@ -1,5 +1,7 @@
 """Abstract classes for remote handlers."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -56,7 +58,7 @@ class RemoteTransferHandler(RemoteHandler):
         self,
         files: TransferFileSet,
         remote_spec: dict,
-        dest_remote_handler: "RemoteTransferHandler" | None = None,
+        dest_remote_handler: RemoteTransferHandler | None = None,
     ) -> int:
         """Transfer files to the remote location.
 
